@@ -71,12 +71,32 @@ wudrivers list --chid 9b723570-d493-5541-ae58-49087512f816
 
 Each bundle lands in `<output>/<CHID>-<version>/`, with its metadata in `bundle.json`.
 
+### One file, for build recipes
+
+`wudrivers fetch` downloads a single file of an update by its update ID, revision and SHA-1, which
+`list --json` prints. It needs no hardware IDs, so a recipe can pin a driver cabinet and get a fresh
+link for it every time it builds:
+
+```
+wudrivers fetch wu://8ac5f653-c97b-4f51-b034-fe17f2f70501/1/02d248b2f6c65de7fae9e7d13154e332d7607a8b -o driver.cab
+```
+
+With makepkg, `wu://` becomes a source protocol through `DLAGENTS`, and the recipe's own checksums
+apply as for any other source:
+
+```
+makedepends=('wudrivers')
+DLAGENTS+=('wu::/usr/bin/wudrivers fetch %u -o %o')
+source=('qcsubsys_ext_adsp8380.cab::wu://8ac5f653-c97b-4f51-b034-fe17f2f70501/1/<SHA-1>')
+```
+
 ## Notes
 
 - The service's TLS certificates chain to Microsoft's own update root, which public trust stores don't
   carry, so they aren't verified. Only metadata comes over that channel, and every downloaded file is
   checked against the digests in it.
 - Download links expire after a while. Run `wudrivers` again for fresh ones instead of saving them.
+- An update can be withdrawn or replaced by a newer revision. Keep the files you depend on.
 - The drivers belong to their makers and Microsoft. `wudrivers` fetches what Windows Update serves to
   the machine; it doesn't redistribute anything.
 

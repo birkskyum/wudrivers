@@ -1,8 +1,10 @@
 """wudrivers: find and download the driver bundle a PC maker publishes on Windows Update."""
 
 import argparse
+import base64
 import json
 import os
+import re
 import shutil
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -101,6 +103,19 @@ def cmd_download(args):
             os.rmdir(cabs)
 
 
+def cmd_fetch(args):
+    m = re.fullmatch(r"wu://([0-9a-fA-F-]{36})/(\d+)/([0-9a-fA-F]{40})", args.file)
+    if not m:
+        sys.exit("wudrivers: give the file as wu://<update ID>/<revision>/<SHA-1 in hex>")
+    update_id, revision, sha1 = m.group(1), int(m.group(2)), base64.b64encode(bytes.fromhex(m.group(3))).decode()
+    urls = wu.Client(args.arch).file_urls(update_id, revision)
+    if sha1 not in urls:
+        raise fetch.Error(f"update {update_id} revision {revision} has no file with SHA-1 {m.group(3).lower()}")
+    output = args.output or m.group(3).lower()
+    fetch.save(urls[sha1], output, sha1, name=os.path.basename(output))
+    print(output, file=sys.stderr)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="wudrivers", description=__doc__)
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -128,6 +143,14 @@ def main(argv=None):
     p.add_argument("--only", action="append", metavar="GLOB", help="only cabinets holding a file that matches, like '*.mbn' or 'qcsubsys*.inf' (repeatable); "
                    "their file lists are read without downloading them")
     p.set_defaults(func=cmd_download)
+    p = sub.add_parser("fetch", help="download one file of an update, by its update ID, revision and SHA-1",
+                       description="Download one file of an update, as wu://<update ID>/<revision>/<SHA-1 in hex>. "
+                       "`wudrivers list --json` gives the three. It needs no hardware IDs, so a build recipe can pin "
+                       "a file and fetch it through a fresh link each time.")
+    p.add_argument("file", metavar="URI", help="wu://<update ID>/<revision>/<SHA-1 in hex>")
+    p.add_argument("-o", "--output", metavar="PATH", help="where to save it (default: the SHA-1 in the current directory)")
+    p.add_argument("--arch", default="arm64", choices=("arm64", "amd64"), help="Windows architecture (default: arm64)")
+    p.set_defaults(func=cmd_fetch)
 
     args = parser.parse_args(argv)
     try:

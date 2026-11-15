@@ -27,21 +27,26 @@ def _digest(path):
     return base64.b64encode(sha1.digest()).decode(), base64.b64encode(sha256.digest()).decode()
 
 
+def save(url, path, sha1, sha256=None, name=None):
+    """Download url to path through a partial file, kept only if it has the given digests (base64)."""
+    partial = path + ".part"
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=300) as response, open(partial, "wb") as out:
+        shutil.copyfileobj(response, out, 1 << 20)
+    got1, got256 = _digest(partial)
+    if got1 != sha1 or (sha256 and got256 != sha256):
+        os.remove(partial)
+        raise Error(f"{name or os.path.basename(path)}: the download doesn't match the digest Windows Update gives")
+    os.replace(partial, path)
+    return path
+
+
 def download(file, url, directory):
     """Download one bundle file into directory, unless a copy with the right digests is there."""
     path = os.path.join(directory, file["name"])
     if os.path.exists(path) and _digest(path) == (file["sha1"], file["sha256"] or _digest(path)[1]):
         return path
-    partial = path + ".part"
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=300) as response, open(partial, "wb") as out:
-        shutil.copyfileobj(response, out, 1 << 20)
-    sha1, sha256 = _digest(partial)
-    if sha1 != file["sha1"] or (file["sha256"] and sha256 != file["sha256"]):
-        os.remove(partial)
-        raise Error(f"{file['name']}: the download doesn't match the digest Windows Update gives")
-    os.replace(partial, path)
-    return path
+    return save(url, path, file["sha1"], file["sha256"], file["name"])
 
 
 def cab_names(url, chunk=65536):
